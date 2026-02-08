@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  walletAddress String       @id @unique
+  profileName   String?
+  realName      String?
+  twitterId     String?
+  telegramId    String?
+  discordId     String?
+  facebookId    String?
+  instagramId   String?
+  createdAt     DateTime     @default(now())
+  role          Role         @default(USER)
+
+  points        UserPoints[]
+  tasks         UserTask[]
+  approvedTasks UserTask[]   @relation("TaskApprover")
+}
+
+model Project {
+  id                     String   @id @default(uuid())
+  name                   String
+  status                 Status   @default(ACTIVE)
+  
+  // New Fields
+  isReferralCodeRequired Boolean  @default(false)
+  pointsPerReferral      Int      @default(0)
+  referralTaskPercentage Float    @default(0.0) // e.g., 10.5%
+  
+  tasks                  Task[]
+  points                 UserPoints[]
+  userTasks              UserTask[]
+
+  @@index([status(sort: Desc)])
+}
+
+model Task {
+  id              String     @id @default(uuid())
+  projectId       String
+  project         Project    @relation(fields: [projectId], references: [id])
+  
+  // New Fields
+  type            String     // e.g., "SOCIAL", "ONCHAIN", "REFERRAL"
+  taskUrl         String?    // Link to tweet, website, etc.
+  status          Boolean    @default(true) // true = Active, false = Inactive/Hidden
+  message         String
+  socialMediaName String
+  points          Int
+  time            Int
+  
+  userTasks       UserTask[]
+
+  @@index([projectId, status(sort: Desc), time(sort: Desc)])
+}
+
+model UserPoints {
+  id                 String   @id @default(uuid())
+  walletAddress      String
+  user               User     @relation(fields: [walletAddress], references: [walletAddress])
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id])
+  
+  // Updated Fields
+  totalPoints        Int      @default(0) // Sum of all buckets below
+  
+  // New Buckets
+  userTaskPoints     Int      @default(0) // Points from doing tasks
+  referralPoints     Int      @default(0) // Points from inviting users
+  referralTaskPoints Int      @default(0) // % earned from downline's tasks
+  
+  referredBy         String?  // Storing the Wallet Address of the upline
+  totalReferrals     Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  @@unique([walletAddress, projectId])
+  @@index([projectId, totalPoints(sort: Desc), createdAt(sort: Asc)])
+}
+
+enum TaskStatus {
+  VERIFYING
+  COMPLETED
+}
+
+model UserTask {
+
+  id            String     @id @default(uuid())
+
+  taskId        String
+  task          Task       @relation(fields: [taskId], references: [id])
+
+  projectId     String
+  project       Project    @relation(fields: [projectId], references: [id])
+
+  walletAddress String
+  user          User       @relation(fields: [walletAddress], references: [walletAddress])
+
+  status        TaskStatus @default(VERIFYING)
+  createdAt     DateTime   @default(now())
+
+  approvedBy    String?
+  approver      User?      @relation("TaskApprover", fields: [approvedBy], references: [walletAddress])
+  approvedAt    DateTime?
+
+  @@unique([taskId, walletAddress])
+
+  @@index([walletAddress, projectId, status(sort: Desc)])
+  @@index([projectId, taskId, status(sort: Desc)])
+}
