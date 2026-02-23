@@ -1,14 +1,18 @@
 import winston from 'winston';
 
 const logger = winston.createLogger({
-  level: 'info',
+  level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
   ),
   transports: [
     new winston.transports.Console({
-      format: winston.format.simple(),
+      format: winston.format.combine(
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.printf(({ level, message, timestamp }) => `${timestamp} ${level}: ${message}`)
+      ),
+      stderrLevels: [], // force all levels to stdout so docker logs capture them
     }),
     new winston.transports.File({ filename: 'error.log', level: 'error' }),
   ],

@@ -15,47 +15,44 @@ export const generateAndSaveNonce = async (walletAddress: string, projectId: str
   await redis.set(key, nonce, 'EX', NONCE_TTL);
   return nonce;
 };
-logger.info('111111111');
-// Updated Signature
+
 export const verifyAndLoginUser = async (
   message: string, 
   signature: string, 
   projectId: string, 
   referral?: string
 ) => {
-  logger.info('222222222');
+  logger.info('Auth verify: start');
 
   // 1. Parse & Verify Message
   let siweMessage: SiweMessage;
   try {
     siweMessage = new SiweMessage(message);
   } catch (e) {
+    logger.warn('Auth verify: invalid SIWE message format');
     throw new AppError('Invalid SIWE message format', 400);
   }
-  logger.info('333333333');
 
   // Parser sets address from the line after "Ethereum account:"; fallback to regex if missing
   const parsedAddress = siweMessage.address ?? (message.match(/0x[a-fA-F0-9]{40}/)?.[0]);
-  logger.info('444444444');
   if (!parsedAddress) {
     throw new AppError('Invalid SIWE message: Ethereum address not found', 400);
   }
   const walletAddress = parsedAddress.toLowerCase();
   const referralAddress = referral ? referral.toLowerCase() : undefined;
   const nonceInMessage = siweMessage.nonce;
-  logger.info('555555555');
 
   // 2. Validate Nonce
   const key = `auth:nonce:${walletAddress}:${projectId}`;
   const storedNonce = await redis.get(key);
   if (!storedNonce || storedNonce !== nonceInMessage) {
+    logger.warn('Auth verify: invalid or expired nonce');
     throw new AppError('Invalid or expired nonce.', 400);
   }
-  logger.info('666666666');
+
   let verificationResult;
   try {
     verificationResult = await siweMessage.verify({ signature });
-    logger.info('777777777');
   } catch (rejected: any) {
     // siwe rejects with { success: false, data, error }; SiweError has .type not .message
     const err = rejected?.error ?? rejected;
