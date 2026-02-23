@@ -42,7 +42,19 @@ export const verifyAndLoginUser = async (
     throw new AppError('Invalid or expired nonce.', 400);
   }
 
-  const fields = await siweMessage.verify({ signature });
+  let verificationResult;
+  try {
+    verificationResult = await siweMessage.verify({ signature });
+  } catch (rejected: any) {
+    // siwe rejects with { success: false, data, error }, not an Error
+    const err = rejected?.error ?? rejected;
+    const msg = err?.message ?? 'Invalid signature';
+    throw new AppError(msg, 400);
+  }
+  if (!verificationResult?.success) {
+    const err = verificationResult?.error as Error | undefined;
+    throw new AppError(err?.message ?? 'Invalid signature', 400);
+  }
   await redis.del(key); // Cleanup
 
   // 1. Fetch Project Settings & Status
@@ -59,9 +71,9 @@ export const verifyAndLoginUser = async (
 
   // 3. Global User Table Check (Synchronous)
   const user = await prisma.user.upsert({
-    where: { walletAddress: fields.data.address },
+    where: { walletAddress: verificationResult.data.address },
     update: {},
-    create: { walletAddress: fields.data.address },
+    create: { walletAddress: verificationResult.data.address },
   });
 
   // 4. Check Project Membership (Synchronous)
@@ -98,7 +110,7 @@ export const verifyAndLoginUser = async (
 
   // 5. Generate JWT
   const token = jwt.sign(
-    { walletAddress: fields.data.address, projectId }, 
+    { walletAddress: verificationResult.data.address, projectId }, 
     process.env.JWT_SECRET as string, 
     { expiresIn: '1d' }
   );
