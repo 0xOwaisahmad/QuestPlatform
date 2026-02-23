@@ -58,19 +58,19 @@ export const verifyAndLoginUser = async (
     const err = rejected?.error ?? rejected;
     const msg =
       (typeof err?.type === 'string' && err.type) || err?.message || 'Invalid signature';
+    logger.warn('Auth verify: signature failed', { reason: msg });
     throw new AppError(msg, 400);
   }
   if (!verificationResult?.success) {
     const err = verificationResult?.error as { type?: string; message?: string } | undefined;
     const msg =
       (typeof err?.type === 'string' && err.type) || err?.message || 'Invalid signature';
+    logger.warn('Auth verify: verification failed', { reason: msg });
     throw new AppError(msg, 400);
   }
   await redis.del(key); // Cleanup
-  logger.info('888888888');
-  // 1. Fetch Project Settings & Status
+
   const project = await prisma.project.findUnique({ where: { id: projectId } });
-  logger.info('999999999');
   if (!project) {
     throw new AppError('Project not found', 404);
   }
@@ -79,28 +79,21 @@ export const verifyAndLoginUser = async (
   if (project.status !== Status.ACTIVE) {
     throw new AppError('This project is currently inactive or paused.', 403);
   }
-  logger.info('1111111111');
-  // 3. Global User Table Check (Synchronous)
+
   const user = await prisma.user.upsert({
     where: { walletAddress },
     update: {},
     create: { walletAddress },
   });
-  logger.info('1212121212');
-  // 4. Check Project Membership (Synchronous)
+
   const existingMembership = await prisma.userPoints.findUnique({
     where: { walletAddress_projectId: { walletAddress, projectId } }
   });
-  logger.info('1313131313');
+
   if (!existingMembership) {
-    // --- NEW USER ONBOARDING LOGIC ---
-    logger.info('1414141414');
-    // B. Validation 1: Mandatory Referral Code
     if (project.isReferralCodeRequired && !referralAddress) {
       throw new AppError('Referral code is required to join this project.', 400);
     }
-    logger.info('1515151515');
-    // C. Validation 2: Referrer Validity
     if (referralAddress) {
       const referrerExists = await prisma.userPoints.findUnique({
         where: { walletAddress_projectId: { walletAddress: referralAddress, projectId } }
@@ -110,22 +103,20 @@ export const verifyAndLoginUser = async (
         throw new AppError('Invalid Referral: Referrer does not belong to this project.', 400);
       }
     }
-    logger.info('1616161616');
-    // D. Queue Execution (Offload DB writes to Worker)
     await addReferralJob({
       walletAddress,
       projectId,
       referralAddress
     });
   }
-  logger.info('1717171717');
-  // 5. Generate JWT
+
   const token = jwt.sign(
     { walletAddress, projectId }, 
     process.env.JWT_SECRET as string, 
     { expiresIn: '1d' }
   );
-  logger.info('1818181818');
+
+  logger.info('Auth verify: success', { walletAddress: walletAddress.slice(0, 10) + '...' });
   const { createdAt, ...userFields } = user;
   return { token, ...userFields };
 };

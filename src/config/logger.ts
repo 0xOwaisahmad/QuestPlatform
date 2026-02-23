@@ -10,9 +10,12 @@ const logger = winston.createLogger({
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.printf(({ level, message, timestamp }) => `${timestamp} ${level}: ${message}`)
+        winston.format.printf(({ level, message, timestamp, ...meta }) => {
+          const metaStr = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
+          return `${timestamp} ${level}: ${message}${metaStr}`;
+        })
       ),
-      stderrLevels: [], // force all levels to stdout so docker logs capture them
+      stderrLevels: [], // all levels to stdout so docker logs capture them
     }),
     new winston.transports.File({ filename: 'error.log', level: 'error' }),
   ],
