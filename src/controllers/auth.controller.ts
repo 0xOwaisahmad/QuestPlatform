@@ -30,7 +30,12 @@ export const verifyAndLogin = async (req: Request, res: Response, next: NextFunc
     
     res.status(200).json({ status: 'success', ...result });
   } catch (err: any) {
-    const message = err?.error?.message ?? err?.message ?? 'Authentication failed';
-    next(new AppError(message, err?.statusCode ?? 400));
+    const raw = err?.error ?? err;
+    const msg =
+      (typeof raw?.type === 'string' && raw.type) ||
+      (typeof raw?.message === 'string' && raw.message) ||
+      (err?.message && String(err.message)) ||
+      'Authentication failed';
+    next(new AppError(msg, err?.statusCode ?? 400));
   }
 };

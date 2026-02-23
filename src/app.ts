@@ -31,9 +31,11 @@ app.all('*', (req: Request, res: Response, next: NextFunction) => {
 
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   const statusCode = err.statusCode || 500;
+  const message =
+    (typeof err?.message === 'string' && err.message) || 'Something went wrong';
   res.status(statusCode).json({
-    status: 'error',
-    message: err.message,
+    status: statusCode >= 500 ? 'error' : 'fail',
+    message,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 });

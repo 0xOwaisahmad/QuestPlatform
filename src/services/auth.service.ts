@@ -5,6 +5,7 @@ import { Status } from '@prisma/client';
 import redis from '../config/redis';
 import { AppError } from '../utils/AppError';
 import { addReferralJob } from '../queue/referral.queue'; // Import the queue
+import logger from '../config/logger';
 
 const NONCE_TTL = 300; 
 
@@ -14,7 +15,7 @@ export const generateAndSaveNonce = async (walletAddress: string, projectId: str
   await redis.set(key, nonce, 'EX', NONCE_TTL);
   return nonce;
 };
-
+logger.info('111111111');
 // Updated Signature
 export const verifyAndLoginUser = async (
   message: string, 
@@ -22,7 +23,8 @@ export const verifyAndLoginUser = async (
   projectId: string, 
   referral?: string
 ) => {
-  
+  logger.info('222222222');
+
   // 1. Parse & Verify Message
   let siweMessage: SiweMessage;
   try {
@@ -30,15 +32,18 @@ export const verifyAndLoginUser = async (
   } catch (e) {
     throw new AppError('Invalid SIWE message format', 400);
   }
+  logger.info('333333333');
 
   // Parser sets address from the line after "Ethereum account:"; fallback to regex if missing
   const parsedAddress = siweMessage.address ?? (message.match(/0x[a-fA-F0-9]{40}/)?.[0]);
+  logger.info('444444444');
   if (!parsedAddress) {
     throw new AppError('Invalid SIWE message: Ethereum address not found', 400);
   }
   const walletAddress = parsedAddress.toLowerCase();
   const referralAddress = referral ? referral.toLowerCase() : undefined;
   const nonceInMessage = siweMessage.nonce;
+  logger.info('555555555');
 
   // 2. Validate Nonce
   const key = `auth:nonce:${walletAddress}:${projectId}`;
@@ -46,54 +51,58 @@ export const verifyAndLoginUser = async (
   if (!storedNonce || storedNonce !== nonceInMessage) {
     throw new AppError('Invalid or expired nonce.', 400);
   }
-
+  logger.info('666666666');
   let verificationResult;
   try {
     verificationResult = await siweMessage.verify({ signature });
+    logger.info('777777777');
   } catch (rejected: any) {
-    // siwe rejects with { success: false, data, error }, not an Error
+    // siwe rejects with { success: false, data, error }; SiweError has .type not .message
     const err = rejected?.error ?? rejected;
-    const msg = err?.message ?? 'Invalid signature';
+    const msg =
+      (typeof err?.type === 'string' && err.type) || err?.message || 'Invalid signature';
     throw new AppError(msg, 400);
   }
   if (!verificationResult?.success) {
-    const err = verificationResult?.error as Error | undefined;
-    throw new AppError(err?.message ?? 'Invalid signature', 400);
+    const err = verificationResult?.error as { type?: string; message?: string } | undefined;
+    const msg =
+      (typeof err?.type === 'string' && err.type) || err?.message || 'Invalid signature';
+    throw new AppError(msg, 400);
   }
   await redis.del(key); // Cleanup
-
+  logger.info('888888888');
   // 1. Fetch Project Settings & Status
   const project = await prisma.project.findUnique({ where: { id: projectId } });
-  
+  logger.info('999999999');
   if (!project) {
     throw new AppError('Project not found', 404);
   }
-
+  logger.info('1010101010');
   // CHECK: Ensure Project is Active (Using Enum)
   if (project.status !== Status.ACTIVE) {
     throw new AppError('This project is currently inactive or paused.', 403);
   }
-
+  logger.info('1111111111');
   // 3. Global User Table Check (Synchronous)
   const user = await prisma.user.upsert({
     where: { walletAddress },
     update: {},
     create: { walletAddress },
   });
-
+  logger.info('1212121212');
   // 4. Check Project Membership (Synchronous)
   const existingMembership = await prisma.userPoints.findUnique({
     where: { walletAddress_projectId: { walletAddress, projectId } }
   });
-
+  logger.info('1313131313');
   if (!existingMembership) {
     // --- NEW USER ONBOARDING LOGIC ---
-
+    logger.info('1414141414');
     // B. Validation 1: Mandatory Referral Code
     if (project.isReferralCodeRequired && !referralAddress) {
       throw new AppError('Referral code is required to join this project.', 400);
     }
-
+    logger.info('1515151515');
     // C. Validation 2: Referrer Validity
     if (referralAddress) {
       const referrerExists = await prisma.userPoints.findUnique({
@@ -104,7 +113,7 @@ export const verifyAndLoginUser = async (
         throw new AppError('Invalid Referral: Referrer does not belong to this project.', 400);
       }
     }
-
+    logger.info('1616161616');
     // D. Queue Execution (Offload DB writes to Worker)
     await addReferralJob({
       walletAddress,
@@ -112,14 +121,14 @@ export const verifyAndLoginUser = async (
       referralAddress
     });
   }
-
+  logger.info('1717171717');
   // 5. Generate JWT
   const token = jwt.sign(
     { walletAddress, projectId }, 
     process.env.JWT_SECRET as string, 
     { expiresIn: '1d' }
   );
-
+  logger.info('1818181818');
   const { createdAt, ...userFields } = user;
   return { token, ...userFields };
 };
