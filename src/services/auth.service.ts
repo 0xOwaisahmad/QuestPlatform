@@ -31,7 +31,12 @@ export const verifyAndLoginUser = async (
     throw new AppError('Invalid SIWE message format', 400);
   }
 
-  const walletAddress = siweMessage.address.toLowerCase();
+  // Parser sets address from the line after "Ethereum account:"; fallback to regex if missing
+  const parsedAddress = siweMessage.address ?? (message.match(/0x[a-fA-F0-9]{40}/)?.[0]);
+  if (!parsedAddress) {
+    throw new AppError('Invalid SIWE message: Ethereum address not found', 400);
+  }
+  const walletAddress = parsedAddress.toLowerCase();
   const referralAddress = referral ? referral.toLowerCase() : undefined;
   const nonceInMessage = siweMessage.nonce;
 
@@ -71,9 +76,9 @@ export const verifyAndLoginUser = async (
 
   // 3. Global User Table Check (Synchronous)
   const user = await prisma.user.upsert({
-    where: { walletAddress: verificationResult.data.address },
+    where: { walletAddress },
     update: {},
-    create: { walletAddress: verificationResult.data.address },
+    create: { walletAddress },
   });
 
   // 4. Check Project Membership (Synchronous)
@@ -110,7 +115,7 @@ export const verifyAndLoginUser = async (
 
   // 5. Generate JWT
   const token = jwt.sign(
-    { walletAddress: verificationResult.data.address, projectId }, 
+    { walletAddress, projectId }, 
     process.env.JWT_SECRET as string, 
     { expiresIn: '1d' }
   );
